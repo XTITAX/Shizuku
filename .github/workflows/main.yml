@@ -1,4 +1,4 @@
-name: Build All Shizuku Modules
+name: Build Shizuku Project
 
 on:
   push:
@@ -18,29 +18,50 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
-      - name: Set up Android NDK
-        uses: android-actions/setup-android-ndk@v1
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
         with:
           ndk-version: '25.1.8937393'
+          cmake-version: '3.22.1'
 
-      - name: Cache Gradle
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+      - name: Generate debug keystore
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android \
+            -keypass android \
+            -dname 'CN=Android Debug,O=Android,C=US'
+          mkdir -p ~/.android
+          mv debug.keystore ~/.android/
 
-      - name: Build (all modules)
+      - name: Build with Gradle
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all \
+            -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
 
-      - name: Upload APKs
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          cp manager/build/outputs/apk/debug/*.apk artifacts/
+          cp server/build/intermediates/cmake/Release/obj/arm64-v8a/shizuku_server artifacts/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: shizuku-artifacts
-          path: |
-            manager/build/outputs/apk/debug/manager-debug.apk
-            server/build/intermediates/cmake/Release/obj/arm64-v8a/shizuku_server
+          name: shizuku-build-${{ github.run_id }}
+          path: artifacts/*
+          retention-days: 3
