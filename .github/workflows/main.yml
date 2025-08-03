@@ -1,4 +1,4 @@
-name: Build Shizuku Project
+name: Build Shizuku (Fixed)
 
 on:
   push:
@@ -26,20 +26,17 @@ jobs:
           ndk-version: '25.1.8937393'
           cmake-version: '3.22.1'
 
-      - name: Generate debug keystore
+      - name: Configure debug signing
         run: |
-          keytool -genkeypair \
-            -v \
-            -keystore debug.keystore \
-            -alias androiddebugkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android \
-            -keypass android \
-            -dname 'CN=Android Debug,O=Android,C=US'
           mkdir -p ~/.android
-          mv debug.keystore ~/.android/
+          cat > ~/.android/debug.keystore << 'EOL'
+          <!-- ВСТАВЬТЕ СОДЕРЖИМОЕ ВАШЕГО debug.keystore В BASE64 ЗДЕСЬ -->
+          EOL
+          base64 -d ~/.android/debug.keystore > ~/.android/debug.keystore
+          echo "signingConfigs.debug.storeFile=~/.android/debug.keystore" >> local.properties
+          echo "signingConfigs.debug.storePassword=android" >> local.properties
+          echo "signingConfigs.debug.keyAlias=androiddebugkey" >> local.properties
+          echo "signingConfigs.debug.keyPassword=android" >> local.properties
 
       - name: Build with Gradle
         run: |
@@ -47,21 +44,21 @@ jobs:
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
-            --warning-mode all \
+            --warning-mode none \
             -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
             -Pandroid.injected.signing.store.password=android \
             -Pandroid.injected.signing.key.alias=androiddebugkey \
             -Pandroid.injected.signing.key.password=android
 
-      - name: Collect artifacts
+      - name: Collect outputs
         run: |
           mkdir -p artifacts
-          cp manager/build/outputs/apk/debug/*.apk artifacts/
-          cp server/build/intermediates/cmake/Release/obj/arm64-v8a/shizuku_server artifacts/
+          find . -name '*.apk' -exec cp {} artifacts/ \;
+          find . -name 'shizuku_server' -exec cp {} artifacts/ \;
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: shizuku-build-${{ github.run_id }}
+          name: shizuku-build-${{ github.run_number }}
           path: artifacts/*
-          retention-days: 3
+          retention-days: 7
